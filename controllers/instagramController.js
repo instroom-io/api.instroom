@@ -85,8 +85,34 @@ async function fetchUserStats(req, res) {
   }
 }
 
+/**
+ * Controller to handle the request for fetching user info from RapidAPI.
+ */
+async function fetchUserInfo(req, res) {
+  const { username } = req.params;
+
+  // 1. Validate the input
+  const { error } = usernameSchema.validate({ username });
+  if (error) {
+    return res.status(400).json({ message: 'Invalid username format.', details: error.details });
+  }
+
+  try {
+    // 2. Call the service to get the data
+    const infoData = await instagramService.getUserInfoFromRapidAPI(username);
+    
+    // 3. Send the successful response
+    res.status(200).json(infoData);
+  } catch (serviceError) {
+    // 4. Handle errors from the service
+    const statusCode = serviceError.message.includes('configuration') ? 500 : 502; 
+    res.status(statusCode).json({ message: serviceError.message });
+  }
+}
+
 module.exports = {
   fetchUserProfile,
   fetchUserMedia,
-  fetchUserStats
+  fetchUserStats,
+  fetchUserInfo
 };

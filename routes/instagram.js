@@ -15,4 +15,8 @@ router.get('/:username/media', instagramController.fetchUserMedia);
 // GET /:username/userstat
 router.get('/:username/userstat', instagramController.fetchUserStats);
 
+// Define the route for getting user info from RapidAPI
+// GET /:username/info
+router.get('/:username/info', instagramController.fetchUserInfo);
+
 module.exports = router;

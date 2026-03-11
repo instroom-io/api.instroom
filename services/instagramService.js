@@ -150,8 +150,61 @@ async function getUserStats(username) {
   };
 }
 
+/**
+ * Fetches user info from the Instagram Social API (RapidAPI).
+ * @param {string} username The Instagram username to look up.
+ * @returns {Promise<object>} The data returned from the API.
+ */
+async function getUserInfoFromRapidAPI(username) {
+  const rapidApiKey = process.env.RAPIDAPI_KEY;
+  const rapidApiHost = process.env.RAPIDAPI_HOST;
+
+  if (!rapidApiKey || !rapidApiHost) {
+    console.error('RapidAPI Key or Host is not defined in environment variables.');
+    throw new Error('API configuration is incomplete.');
+  }
+
+  const headers = {
+    'x-rapidapi-key': rapidApiKey,
+    'x-rapidapi-host': rapidApiHost
+  };
+  const params = { username_or_id_or_url: username };
+  const baseURL = `https://${rapidApiHost}`;
+
+  try {
+    // Fetch info and about data concurrently
+    const [infoResponse, aboutResponse] = await Promise.all([
+      axios.get(`${baseURL}/v1/info`, { headers, params }),
+      axios.get(`${baseURL}/v1/info_about`, { headers, params })
+    ]);
+
+    const infoData = infoResponse.data;
+    const aboutData = aboutResponse.data;
+
+    let email = null;
+    let country = null;
+
+    if (infoData && infoData.data) {
+      email = infoData.data.public_email || null;
+
+      // Prioritize location from 'info_about' endpoint, fallback to 'info' endpoint
+      if (aboutData && aboutData.data && aboutData.data.country) {
+        country = aboutData.data.country;
+      } else if (infoData.data.about && infoData.data.about.country) {
+        country = infoData.data.about.country;
+      }
+    }
+
+    return { country, email };
+  } catch (apiError) {
+    console.error('Error fetching user info from RapidAPI:', apiError.response ? apiError.response.data : apiError.message);
+    throw new Error('Failed to fetch data from Instagram Social API.');
+  }
+}
+
 module.exports = {
   getUserProfile,
   getUserMedia,
-  getUserStats
+  getUserStats,
+  getUserInfoFromRapidAPI
 };
