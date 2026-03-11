@@ -1,9 +1,6 @@
 // services/instagramService.js
 const axios = require('axios');
 
-// Retrieve the access token from environment variables
-const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
-const instagramBusinessId = '17841456893636311'; // Your Instagram Business Account ID
 
 /**
  * Fetches user data from the Instagram Graph API using business_discovery.
@@ -11,8 +8,11 @@ const instagramBusinessId = '17841456893636311'; // Your Instagram Business Acco
  * @returns {Promise<object>} The data returned from the API.
  */
 async function getUserProfile(username) {
-  if (!accessToken) {
-    console.error('Instagram Access Token is not defined in environment variables.');
+  const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const instagramBusinessId = process.env.INSTAGRAM_BUSINESS_ID;
+
+  if (!accessToken || !instagramBusinessId) {
+    console.error('Instagram Access Token or Business ID is not defined in environment variables.');
     // Throw an error that can be caught by the controller
     throw new Error('API configuration is incomplete.');
   }
@@ -39,8 +39,11 @@ async function getUserProfile(username) {
  * @returns {Promise<object>} The media data returned from the API.
  */
 async function getUserMedia(username) {
-  if (!accessToken) {
-    console.error('Instagram Access Token is not defined in environment variables.');
+  const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const instagramBusinessId = process.env.INSTAGRAM_BUSINESS_ID;
+
+  if (!accessToken || !instagramBusinessId) {
+    console.error('Instagram Access Token or Business ID is not defined in environment variables.');
     throw new Error('API configuration is incomplete.');
   }
 

@@ -28,7 +28,7 @@ app.use(express.json());
 
 // --- Routes ---
 // Use the Instagram routes for any requests to /api/instagram
-app.use('/api/instagram', instagramRoutes);
+app.use('/', instagramRoutes);
 
 // --- Global Error Handler (Optional but good practice) ---
 // This catches any errors that aren't handled in the route handlers
