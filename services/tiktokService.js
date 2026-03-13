@@ -55,9 +55,9 @@ async function getTikTokData(username) {
       avatar: profile['Avatar URL'] || 'Not Available',
       country: profile['Country'] || 'Not Available',
       user_id: profile['User ID'] || 'Not Available',
-      followers: stats['Followers'] || 'Not Available',
-      hearts: stats['Hearts'] || 'Not Available',
-      videos: stats['Videos'] || 'Not Available',
+      followers: stats['followers'] || 'Not Available',
+      hearts: stats['hearts'] || 'Not Available',
+      videos: stats['videos'] || 'Not Available',
       email: email || 'Not Available'
     };
   } catch (apiError) {
