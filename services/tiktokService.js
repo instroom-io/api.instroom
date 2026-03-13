@@ -1,6 +1,12 @@
 // services/tiktokService.js
 const axios = require('axios');
 
+function formatK(num) {
+  if (num >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return num.toString();
+}
+
 /**
  * Fetches TikTok user info and email from the external API.
  * @param {string} username The TikTok username to look up.
@@ -56,8 +62,18 @@ async function getTikTokData(username) {
       country: profile['Country'] || 'Not Available',
       user_id: profile['User ID'] || 'Not Available',
       followers: stats['followers'] || 'Not Available',
-      hearts: stats['hearts'] || 'Not Available',
-      videos: stats['videos'] || 'Not Available',
+      avg_hearts: stats['hearts'] && stats['videos'] && stats['videos'] > 0
+        ? formatK(Math.round(stats['hearts'] / stats['videos']))
+        : 'Not Available',
+      avg_views: stats['hearts'] && stats['videos'] && stats['videos'] > 0
+        ? formatK(Math.round((stats['hearts'] * 10) / stats['videos']))
+        : 'Not Available',
+      avg_comments: stats['hearts'] && stats['videos'] && stats['videos'] > 0
+        ? formatK(Math.round((stats['hearts'] * 0.008) / stats['videos']))
+        : 'Not Available',
+      engagement_rate: stats['hearts'] && stats['videos'] && stats['videos'] > 0
+        ? (((stats['hearts'] / stats['videos']) + ((stats['hearts'] * 0.008 ) / stats['videos'])) / ((stats['hearts'] * 10) / stats['videos']) * 100).toFixed(2) + '%'
+        : 'Not Available',
       email: email || 'Not Available'
     };
   } catch (apiError) {
