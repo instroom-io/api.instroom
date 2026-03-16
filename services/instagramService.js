@@ -1,6 +1,7 @@
 // services/instagramService.js
 const axios = require('axios');
 const cache = require('../utils/cache');
+const { checkAndIncrement } = require('../utils/rapidApiLimiter');
 
 /**
  * Formats a number into a compact string representation (e.g., 1000 -> "1k", 1200 -> "1.2k").
@@ -133,6 +134,8 @@ async function getUserInfoFromRapidAPI(username) {
   const headers = { 'x-rapidapi-key': rapidApiKey, 'x-rapidapi-host': rapidApiHost };
   const params = { username_or_id_or_url: username };
   const baseURL = `https://${rapidApiHost}`;
+
+  await checkAndIncrement();
 
   try {
     const infoResponse = await axios.get(`${baseURL}/v1/info`, { headers, params, timeout: 10000 });
