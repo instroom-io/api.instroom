@@ -100,10 +100,81 @@ async function searchHashtags(query) {
 }
 
 /**
- * Searches for locations by query string via RapidAPI.
+ * Searches for a location by name, then fetches posts from the top match
+ * and returns unique user profiles found at that location.
  */
-async function searchLocations(query) {
-  const cacheKey = `search_locations:${query.toLowerCase()}`;
+async function searchLocationUsers(query) {
+  const cacheKey = `location_users:${query.toLowerCase()}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const rapidApiKey = process.env.RAPIDAPI_KEY;
+  const rapidApiHost = process.env.RAPIDAPI_HOST;
+
+  if (!rapidApiKey || !rapidApiHost) {
+    throw new Error('API configuration is incomplete.');
+  }
+
+  const headers = { 'x-rapidapi-key': rapidApiKey, 'x-rapidapi-host': rapidApiHost };
+  const baseURL = `https://${rapidApiHost}`;
+
+  // Step 1: Search for the location
+  await checkAndIncrement();
+
+  let locationId;
+  let locationName;
+  try {
+    const locResponse = await axios.get(`${baseURL}/v1/search_location`, { headers, params: { search_query: query }, timeout: 10000 });
+    const locations = locResponse.data?.data?.items || [];
+    if (locations.length === 0) {
+      const result = { location: null, count: 0, items: [] };
+      cache.set(cacheKey, result);
+      return result;
+    }
+    locationId = locations[0].id;
+    locationName = locations[0].name;
+  } catch (apiError) {
+    console.error('Error searching locations from RapidAPI:', apiError.response?.data ?? apiError.message);
+    throw new Error('Failed to search locations from Instagram Social API.');
+  }
+
+  // Step 2: Fetch posts from that location
+  await checkAndIncrement();
+
+  try {
+    const postsResponse = await axios.get(`${baseURL}/v1/location_posts`, { headers, params: { location_id: locationId }, timeout: 30000 });
+    const items = postsResponse.data?.data?.items || [];
+
+    const seen = new Set();
+    const users = [];
+    for (const item of items) {
+      const user = item.caption?.user || item.user;
+      if (user && !seen.has(user.id)) {
+        seen.add(user.id);
+        users.push({
+          id: user.id,
+          username: user.username,
+          full_name: user.full_name,
+          is_verified: user.is_verified,
+          profile_pic_url: user.profile_pic_url
+        });
+      }
+    }
+
+    const result = { location: { id: locationId, name: locationName }, count: users.length, items: users };
+    cache.set(cacheKey, result);
+    return result;
+  } catch (apiError) {
+    console.error('Error fetching location posts from RapidAPI:', apiError.response?.data ?? apiError.message);
+    throw new Error('Failed to fetch posts from this location.');
+  }
+}
+
+/**
+ * Searches for posts by keyword via RapidAPI and extracts user profiles.
+ */
+async function searchPosts(query) {
+  const cacheKey = `search_posts:${query.toLowerCase()}`;
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
@@ -121,13 +192,31 @@ async function searchLocations(query) {
   await checkAndIncrement();
 
   try {
-    const response = await axios.get(`${baseURL}/v1/search_locations`, { headers, params, timeout: 10000 });
-    const result = response.data?.data || { count: 0, items: [] };
+    const response = await axios.get(`${baseURL}/v1/search_posts`, { headers, params, timeout: 30000 });
+    const items = response.data?.data?.items || [];
+
+    const seen = new Set();
+    const users = [];
+    for (const item of items) {
+      const user = item.caption?.user || item.user;
+      if (user && !seen.has(user.id)) {
+        seen.add(user.id);
+        users.push({
+          id: user.id,
+          username: user.username,
+          full_name: user.full_name,
+          is_verified: user.is_verified,
+          profile_pic_url: user.profile_pic_url
+        });
+      }
+    }
+
+    const result = { count: users.length, items: users };
     cache.set(cacheKey, result);
     return result;
   } catch (apiError) {
-    console.error('Error searching locations from RapidAPI:', apiError.response?.data ?? apiError.message);
-    throw new Error('Failed to search locations from Instagram Social API.');
+    console.error('Error searching posts from RapidAPI:', apiError.response?.data ?? apiError.message);
+    throw new Error('Failed to search posts from Instagram Social API.');
   }
 }
 
@@ -135,5 +224,6 @@ module.exports = {
   searchUsers,
   getSimilarAccounts,
   searchHashtags,
-  searchLocations
+  searchLocationUsers,
+  searchPosts
 };

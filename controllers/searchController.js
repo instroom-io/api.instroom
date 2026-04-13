@@ -2,25 +2,28 @@
 const Joi = require('joi');
 const searchService = require('../services/searchService');
 
-const searchQuerySchema = Joi.object({
-  q: Joi.string().min(1).max(100).required()
+const querySchema = Joi.object({
+  query: Joi.string().min(1).max(100).required()
 });
 
 const usernameSchema = Joi.object({
   username: Joi.string().pattern(/^[a-zA-Z0-9._]+$/).min(1).max(30).required()
 });
 
+
 /**
  * Controller for searching Instagram users.
  */
 async function searchUsers(req, res) {
-  const { error } = searchQuerySchema.validate({ q: req.query.q });
+  const { query } = req.params;
+
+  const { error } = querySchema.validate({ query });
   if (error) {
     return res.status(400).json({ message: 'Invalid search query.', details: error.details });
   }
 
   try {
-    const results = await searchService.searchUsers(req.query.q);
+    const results = await searchService.searchUsers(query);
     res.status(200).json(results);
   } catch (serviceError) {
     const statusCode = serviceError.message.includes('configuration') ? 500 : 502;
@@ -52,13 +55,15 @@ async function fetchSimilarAccounts(req, res) {
  * Controller for searching hashtags.
  */
 async function searchHashtags(req, res) {
-  const { error } = searchQuerySchema.validate({ q: req.query.q });
+  const { query } = req.params;
+
+  const { error } = querySchema.validate({ query });
   if (error) {
     return res.status(400).json({ message: 'Invalid search query.', details: error.details });
   }
 
   try {
-    const results = await searchService.searchHashtags(req.query.q);
+    const results = await searchService.searchHashtags(query);
     res.status(200).json(results);
   } catch (serviceError) {
     const statusCode = serviceError.message.includes('configuration') ? 500 : 502;
@@ -67,16 +72,39 @@ async function searchHashtags(req, res) {
 }
 
 /**
- * Controller for searching locations.
+ * Controller for searching users by location name.
  */
-async function searchLocations(req, res) {
-  const { error } = searchQuerySchema.validate({ q: req.query.q });
+async function searchLocationUsers(req, res) {
+  const rawQuery = req.params.query;
+  const query = Array.isArray(rawQuery) ? rawQuery.join(' ') : rawQuery;
+
+  const { error } = querySchema.validate({ query });
   if (error) {
     return res.status(400).json({ message: 'Invalid search query.', details: error.details });
   }
 
   try {
-    const results = await searchService.searchLocations(req.query.q);
+    const results = await searchService.searchLocationUsers(query);
+    res.status(200).json(results);
+  } catch (serviceError) {
+    const statusCode = serviceError.message.includes('configuration') ? 500 : 502;
+    res.status(statusCode).json({ message: serviceError.message });
+  }
+}
+
+/**
+ * Controller for searching posts by keyword (returns user profiles).
+ */
+async function searchPosts(req, res) {
+  const { query } = req.params;
+
+  const { error } = querySchema.validate({ query });
+  if (error) {
+    return res.status(400).json({ message: 'Invalid search query.', details: error.details });
+  }
+
+  try {
+    const results = await searchService.searchPosts(query);
     res.status(200).json(results);
   } catch (serviceError) {
     const statusCode = serviceError.message.includes('configuration') ? 500 : 502;
@@ -88,5 +116,6 @@ module.exports = {
   searchUsers,
   fetchSimilarAccounts,
   searchHashtags,
-  searchLocations
+  searchLocationUsers,
+  searchPosts
 };
