@@ -7,6 +7,7 @@ require('dotenv').config();
 
 const instagramRoutes = require('./routes/instagram');
 const tiktokRoutes = require('./routes/tiktok');
+const searchRoutes = require('./routes/search');
 const { getStats } = require('./utils/rapidApiLimiter');
 
 const app = express();
@@ -34,6 +35,7 @@ app.use(express.json());
 // Routes
 app.use('/', instagramRoutes);
 app.use('/', tiktokRoutes);
+app.use('/search', searchRoutes);
 
 // RapidAPI usage stats
 app.get('/api/usage', async (_req, res) => {

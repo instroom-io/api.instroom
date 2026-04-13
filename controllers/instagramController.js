@@ -9,6 +9,7 @@ const usernameSchema = Joi.object({
   username: Joi.string().pattern(/^[a-zA-Z0-9._]+$/).min(1).max(30).required()
 });
 
+
 /**
  * Controller to handle the request for fetching an Instagram user's profile.
  */
