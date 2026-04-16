@@ -101,16 +101,16 @@ async function getStats() {
     const current = await client.get(key);
     const used = parseInt(current, 10) || 0;
 
-    const searchCount = parseInt(await client.get(`${key}:search`), 10) || 0;
-    const instagramCount = parseInt(await client.get(`${key}:instagram`), 10) || 0;
+    const instroomAppCount = parseInt(await client.get(`${key}:instroomApp`), 10) || 0;
+    const instroomExtensionCount = parseInt(await client.get(`${key}:instroomExtension`), 10) || 0;
 
     return {
       used,
       cap: MONTHLY_CAP,
       remaining: Math.max(0, MONTHLY_CAP - used),
       breakdown: {
-        search: searchCount,
-        instagram: instagramCount,
+        instroomApp: instroomAppCount,
+        instroomExtension: instroomExtensionCount,
       }
     };
   } catch {

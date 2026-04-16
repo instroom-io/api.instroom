@@ -135,7 +135,7 @@ async function getUserInfoFromRapidAPI(username) {
   const params = { username_or_id_or_url: username };
   const baseURL = `https://${rapidApiHost}`;
 
-  await checkAndIncrement('instagram');
+  await checkAndIncrement('instroomExtension');
 
   try {
     const infoResponse = await axios.get(`${baseURL}/v1/info`, { headers, params, timeout: 10000 });
@@ -196,7 +196,7 @@ async function getUserPostsFromRapidAPI(username) {
   const params = { username_or_id_or_url: username };
   const baseURL = `https://${rapidApiHost}`;
 
-  await checkAndIncrement('instagram');
+  await checkAndIncrement('instroomExtension');
 
   try {
     const response = await axios.get(`${baseURL}/v1/posts`, { headers, params, timeout: 10000 });
