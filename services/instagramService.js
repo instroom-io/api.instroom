@@ -1,7 +1,11 @@
 // services/instagramService.js
 const axios = require('axios');
+const https = require('https');
 const cache = require('../utils/cache');
 const { checkAndIncrement } = require('../utils/rapidApiLimiter');
+
+// Reuse TCP connections across requests (avoids TLS handshake per call)
+const keepAliveAgent = new https.Agent({ keepAlive: true, maxSockets: 10 });
 
 /**
  * Formats a number into a compact string representation (e.g., 1000 -> "1k", 1200 -> "1.2k").
@@ -275,14 +279,76 @@ async function getFullOverview(username) {
 
 /**
  * Fetches a full overview using only RapidAPI data sources (V2).
- * Fetches info + posts in parallel (2 API calls), then computes stats inline.
+ * Optimised: single rate-limit check, all HTTP calls in parallel.
  */
 async function getFullOverviewFromRapidAPI(username) {
-  const [infoData, postsData] = await Promise.all([
-    getUserInfoFromRapidAPI(username),
-    getUserPostsFromRapidAPI(username)
+  const cachedInfo = cache.get(`info:${username}`);
+  const cachedPosts = cache.get(`posts:${username}`);
+
+  // Both cached — skip API + Redis entirely
+  if (cachedInfo && cachedPosts) {
+    return buildOverview(cachedInfo, cachedPosts, username);
+  }
+
+  const rapidApiKey = process.env.RAPIDAPI_KEY;
+  const rapidApiHost = process.env.RAPIDAPI_HOST;
+  if (!rapidApiKey || !rapidApiHost) throw new Error('API configuration is incomplete.');
+
+  const headers = { 'x-rapidapi-key': rapidApiKey, 'x-rapidapi-host': rapidApiHost };
+  const params = { username_or_id_or_url: username };
+  const baseURL = `https://${rapidApiHost}`;
+
+  // Single rate-limit check for all uncached calls
+  const callsNeeded = (cachedInfo ? 0 : 1) + (cachedPosts ? 0 : 1);
+  await checkAndIncrement('instroomExtension', callsNeeded);
+
+  // Fire all HTTP requests in parallel (info + info_about + posts) with keep-alive
+  const opts = { headers, params, timeout: 10000, httpsAgent: keepAliveAgent };
+  const [infoResult, aboutResult, postsResult] = await Promise.all([
+    cachedInfo || axios.get(`${baseURL}/v1/info`, opts).then(r => r.data),
+    cachedInfo || axios.get(`${baseURL}/v1/info_about`, opts).then(r => r.data).catch(() => null),
+    cachedPosts || axios.get(`${baseURL}/v1/posts`, opts).then(r => r.data),
   ]);
 
+  // Process info
+  let infoData;
+  if (cachedInfo) {
+    infoData = cachedInfo;
+  } else {
+    const d = infoResult?.data;
+    const country = d?.about?.country || aboutResult?.data?.country || null;
+    infoData = {
+      country,
+      email: d?.public_email || 'Email not available',
+      followers: d?.follower_count || 0,
+      user_id: d?.id || null,
+      avatar: d?.profile_pic_url || null,
+      username: d?.username || username,
+    };
+    cache.set(`info:${username}`, infoData);
+  }
+
+  // Process posts
+  let postsData;
+  if (cachedPosts) {
+    postsData = cachedPosts;
+  } else {
+    const items = postsResult?.data?.items || [];
+    postsData = items.reduce((acc, item) => {
+      acc.total_comment_count += item.comment_count || 0;
+      acc.total_like_count += item.like_count || 0;
+      acc.total_play_count += item.play_count || 0;
+      return acc;
+    }, { total_comment_count: 0, total_like_count: 0, total_play_count: 0 });
+    postsData.post_count = items.length;
+    cache.set(`posts:${username}`, postsData);
+  }
+
+  return buildOverview(infoData, postsData, username);
+}
+
+/** Computes the final overview object from info + posts data. */
+function buildOverview(infoData, postsData, username) {
   const { total_like_count, total_comment_count, total_play_count, post_count } = postsData;
   const followers = infoData.followers || 0;
 

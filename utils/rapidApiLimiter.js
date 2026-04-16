@@ -65,12 +65,13 @@ function secondsUntilEndOfCycle() {
 }
 
 /**
- * Checks if the monthly cap is reached, then increments the counter.
+ * Checks if the monthly cap is reached, then increments the counter by `amount`.
  * Throws an error with HTTP 429 status if the cap is exceeded.
  * Falls through silently if Redis is unavailable (fail-open).
- * @param {string} [tag] - Optional tag for per-endpoint tracking (e.g. 'search', 'instagram')
+ * @param {string} [tag] - Optional tag for per-endpoint tracking (e.g. 'instroomApp', 'instroomExtension')
+ * @param {number} [amount=1] - Number of calls to reserve
  */
-async function checkAndIncrement(tag) {
+async function checkAndIncrement(tag, amount = 1) {
   const client = getRedis();
   const key = monthlyKey();
 
@@ -80,7 +81,7 @@ async function checkAndIncrement(tag) {
     const current = await client.get(key);
     const count = parseInt(current, 10) || 0;
 
-    if (count >= MONTHLY_CAP) {
+    if (count + amount > MONTHLY_CAP) {
       const nextReset = new Date(billingCycleStart());
       nextReset.setUTCMonth(nextReset.getUTCMonth() + 1);
       const err = new Error(`Monthly RapidAPI call limit of ${MONTHLY_CAP} reached. Resets on ${nextReset.toISOString().split('T')[0]}.`);
@@ -88,18 +89,17 @@ async function checkAndIncrement(tag) {
       throw err;
     }
 
-    // Atomically increment and set TTL on first call of the month
     const ttl = secondsUntilEndOfCycle();
-    const newCount = await client.incr(key);
-    if (newCount === 1) {
+    const newCount = await client.incrby(key, amount);
+    if (newCount === amount) {
       await client.expire(key, ttl);
     }
 
     // Increment per-tag counter for usage breakdown
     if (tag) {
       const tagKey = `${key}:${tag}`;
-      const tagCount = await client.incr(tagKey);
-      if (tagCount === 1) {
+      const tagCount = await client.incrby(tagKey, amount);
+      if (tagCount === amount) {
         await client.expire(tagKey, ttl);
       }
     }
