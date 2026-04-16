@@ -5,6 +5,7 @@
 const Redis = require('ioredis');
 
 const MONTHLY_CAP = parseInt(process.env.RAPIDAPI_MONTHLY_CAP, 10) || 29990;
+const BILLING_CYCLE_DAY = parseInt(process.env.RAPIDAPI_BILLING_DAY, 10) || 16;
 
 let redis;
 
@@ -26,22 +27,41 @@ function getRedis() {
 }
 
 /**
- * Returns the Redis key for the current month, e.g. "rapidapi:calls:2026-03"
+ * Returns the start date of the current billing cycle based on BILLING_CYCLE_DAY.
+ * e.g. if BILLING_CYCLE_DAY=16 and today is Apr 20 → Apr 16
+ *      if BILLING_CYCLE_DAY=16 and today is Apr 10 → Mar 16
  */
-function monthlyKey() {
+function billingCycleStart() {
   const now = new Date();
   const y = now.getUTCFullYear();
-  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
-  return `rapidapi:calls:${y}-${m}`;
+  const m = now.getUTCMonth();
+  const d = now.getUTCDate();
+
+  if (d >= BILLING_CYCLE_DAY) {
+    return new Date(Date.UTC(y, m, BILLING_CYCLE_DAY));
+  }
+  return new Date(Date.UTC(y, m - 1, BILLING_CYCLE_DAY));
 }
 
 /**
- * Returns seconds until end of current UTC month (used as Redis TTL).
+ * Returns the Redis key for the current billing cycle, e.g. "rapidapi:calls:2026-03-16"
  */
-function secondsUntilEndOfMonth() {
+function monthlyKey() {
+  const start = billingCycleStart();
+  const y = start.getUTCFullYear();
+  const m = String(start.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(start.getUTCDate()).padStart(2, '0');
+  return `rapidapi:calls:${y}-${m}-${d}`;
+}
+
+/**
+ * Returns seconds until the next billing cycle reset date (used as Redis TTL).
+ */
+function secondsUntilEndOfCycle() {
   const now = new Date();
-  const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-  return Math.ceil((nextMonth - now) / 1000);
+  const start = billingCycleStart();
+  const nextReset = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, BILLING_CYCLE_DAY));
+  return Math.ceil((nextReset - now) / 1000);
 }
 
 /**
@@ -61,13 +81,15 @@ async function checkAndIncrement(tag) {
     const count = parseInt(current, 10) || 0;
 
     if (count >= MONTHLY_CAP) {
-      const err = new Error(`Monthly RapidAPI call limit of ${MONTHLY_CAP} reached. Resets next month.`);
+      const nextReset = new Date(billingCycleStart());
+      nextReset.setUTCMonth(nextReset.getUTCMonth() + 1);
+      const err = new Error(`Monthly RapidAPI call limit of ${MONTHLY_CAP} reached. Resets on ${nextReset.toISOString().split('T')[0]}.`);
       err.status = 429;
       throw err;
     }
 
     // Atomically increment and set TTL on first call of the month
-    const ttl = secondsUntilEndOfMonth();
+    const ttl = secondsUntilEndOfCycle();
     const newCount = await client.incr(key);
     if (newCount === 1) {
       await client.expire(key, ttl);
@@ -104,10 +126,15 @@ async function getStats() {
     const instroomAppCount = parseInt(await client.get(`${key}:instroomApp`), 10) || 0;
     const instroomExtensionCount = parseInt(await client.get(`${key}:instroomExtension`), 10) || 0;
 
+    const start = billingCycleStart();
+    const nextReset = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, BILLING_CYCLE_DAY));
+
     return {
       used,
       cap: MONTHLY_CAP,
       remaining: Math.max(0, MONTHLY_CAP - used),
+      cycleStart: start.toISOString().split('T')[0],
+      cycleEnd: nextReset.toISOString().split('T')[0],
       breakdown: {
         instroomApp: instroomAppCount,
         instroomExtension: instroomExtensionCount,
