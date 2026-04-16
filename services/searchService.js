@@ -1,7 +1,11 @@
 // services/searchService.js
 const axios = require('axios');
+const https = require('https');
 const cache = require('../utils/cache');
 const { checkAndIncrement } = require('../utils/rapidApiLimiter');
+
+// Reuse TCP connections across requests (avoids TLS handshake per call)
+const keepAliveAgent = new https.Agent({ keepAlive: true, maxSockets: 10 });
 
 /**
  * Searches for Instagram users by query string via RapidAPI.
@@ -22,10 +26,10 @@ async function searchUsers(query) {
   const params = { search_query: query };
   const baseURL = `https://${rapidApiHost}`;
 
-  await checkAndIncrement('instroomApp');
+  await checkAndIncrement('instroomApp', 1, 'users');
 
   try {
-    const response = await axios.get(`${baseURL}/v1/search_users`, { headers, params, timeout: 10000 });
+    const response = await axios.get(`${baseURL}/v1/search_users`, { headers, params, timeout: 10000, httpsAgent: keepAliveAgent });
     const result = response.data?.data || { count: 0, items: [] };
     cache.set(cacheKey, result);
     return result;
@@ -54,10 +58,10 @@ async function getSimilarAccounts(username) {
   const params = { username_or_id_or_url: username };
   const baseURL = `https://${rapidApiHost}`;
 
-  await checkAndIncrement('instroomApp');
+  await checkAndIncrement('instroomApp', 1, 'similar');
 
   try {
-    const response = await axios.get(`${baseURL}/v1/similar_accounts`, { headers, params, timeout: 10000 });
+    const response = await axios.get(`${baseURL}/v1/similar_accounts`, { headers, params, timeout: 10000, httpsAgent: keepAliveAgent });
     const result = response.data?.data || { count: 0, items: [] };
     cache.set(cacheKey, result);
     return result;
@@ -86,10 +90,10 @@ async function searchHashtags(query) {
   const params = { search_query: query };
   const baseURL = `https://${rapidApiHost}`;
 
-  await checkAndIncrement('instroomApp');
+  await checkAndIncrement('instroomApp', 1, 'hashtags');
 
   try {
-    const response = await axios.get(`${baseURL}/v1/search_hashtags`, { headers, params, timeout: 10000 });
+    const response = await axios.get(`${baseURL}/v1/search_hashtags`, { headers, params, timeout: 10000, httpsAgent: keepAliveAgent });
     const result = response.data?.data || { count: 0, items: [] };
     cache.set(cacheKey, result);
     return result;
@@ -117,14 +121,16 @@ async function searchLocationUsers(query) {
 
   const headers = { 'x-rapidapi-key': rapidApiKey, 'x-rapidapi-host': rapidApiHost };
   const baseURL = `https://${rapidApiHost}`;
+  const opts = { headers, timeout: 10000, httpsAgent: keepAliveAgent };
+
+  // Single rate-limit check for both API calls upfront
+  await checkAndIncrement('instroomApp', 2, 'locations');
 
   // Step 1: Search for the location
-  await checkAndIncrement('instroomApp');
-
   let locationId;
   let locationName;
   try {
-    const locResponse = await axios.get(`${baseURL}/v1/search_location`, { headers, params: { search_query: query }, timeout: 10000 });
+    const locResponse = await axios.get(`${baseURL}/v1/search_location`, { ...opts, params: { search_query: query } });
     const locations = locResponse.data?.data?.items || [];
     if (locations.length === 0) {
       const result = { location: null, count: 0, items: [] };
@@ -139,10 +145,8 @@ async function searchLocationUsers(query) {
   }
 
   // Step 2: Fetch posts from that location
-  await checkAndIncrement('instroomApp');
-
   try {
-    const postsResponse = await axios.get(`${baseURL}/v1/location_posts`, { headers, params: { location_id: locationId }, timeout: 30000 });
+    const postsResponse = await axios.get(`${baseURL}/v1/location_posts`, { ...opts, params: { location_id: locationId }, timeout: 30000 });
     const items = postsResponse.data?.data?.items || [];
 
     const seen = new Set();
@@ -189,10 +193,10 @@ async function searchPosts(query) {
   const params = { search_query: query };
   const baseURL = `https://${rapidApiHost}`;
 
-  await checkAndIncrement('instroomApp');
+  await checkAndIncrement('instroomApp', 1, 'posts');
 
   try {
-    const response = await axios.get(`${baseURL}/v1/search_posts`, { headers, params, timeout: 30000 });
+    const response = await axios.get(`${baseURL}/v1/search_posts`, { headers, params, timeout: 30000, httpsAgent: keepAliveAgent });
     const items = response.data?.data?.items || [];
 
     const seen = new Set();

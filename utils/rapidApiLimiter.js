@@ -70,20 +70,22 @@ function secondsUntilEndOfCycle() {
  * Falls through silently if Redis is unavailable (fail-open).
  * @param {string} [tag] - Optional tag for per-endpoint tracking (e.g. 'instroomApp', 'instroomExtension')
  * @param {number} [amount=1] - Number of calls to reserve
+ * @param {string} [subtag] - Optional subtag for granular breakdown within a tag (e.g. 'users', 'hashtags')
  */
-async function checkAndIncrement(tag, amount = 1) {
+async function checkAndIncrement(tag, amount = 1, subtag) {
   const client = getRedis();
   const key = monthlyKey();
 
   try {
     await client.connect().catch(() => {}); // no-op if already connected
 
-    // Single pipeline: GET current count + INCRBY + tag INCRBY (1 round trip)
+    // Single pipeline: GET current count + INCRBY + tag INCRBY + subtag INCRBY (1 round trip)
     const ttl = secondsUntilEndOfCycle();
     const pipe = client.pipeline();
     pipe.get(key);
     pipe.incrby(key, amount);
     if (tag) pipe.incrby(`${key}:${tag}`, amount);
+    if (tag && subtag) pipe.incrby(`${key}:${tag}:${subtag}`, amount);
     const results = await pipe.exec();
 
     const current = parseInt(results[0][1], 10) || 0;
@@ -92,6 +94,7 @@ async function checkAndIncrement(tag, amount = 1) {
       const rollback = client.pipeline();
       rollback.decrby(key, amount);
       if (tag) rollback.decrby(`${key}:${tag}`, amount);
+      if (tag && subtag) rollback.decrby(`${key}:${tag}:${subtag}`, amount);
       await rollback.exec();
 
       const nextReset = new Date(billingCycleStart());
@@ -107,6 +110,7 @@ async function checkAndIncrement(tag, amount = 1) {
       const ttlPipe = client.pipeline();
       ttlPipe.expire(key, ttl);
       if (tag) ttlPipe.expire(`${key}:${tag}`, ttl);
+      if (tag && subtag) ttlPipe.expire(`${key}:${tag}:${subtag}`, ttl);
       await ttlPipe.exec();
     }
   } catch (err) {
@@ -124,11 +128,21 @@ async function getStats() {
 
   try {
     await client.connect().catch(() => {});
-    const current = await client.get(key);
-    const used = parseInt(current, 10) || 0;
 
-    const instroomAppCount = parseInt(await client.get(`${key}:instroomApp`), 10) || 0;
-    const instroomExtensionCount = parseInt(await client.get(`${key}:instroomExtension`), 10) || 0;
+    // Fetch all counters in a single pipeline
+    const pipe = client.pipeline();
+    pipe.get(key);
+    pipe.get(`${key}:instroomApp`);
+    pipe.get(`${key}:instroomExtension`);
+    pipe.get(`${key}:instroomApp:users`);
+    pipe.get(`${key}:instroomApp:similar`);
+    pipe.get(`${key}:instroomApp:hashtags`);
+    pipe.get(`${key}:instroomApp:locations`);
+    pipe.get(`${key}:instroomApp:posts`);
+    const results = await pipe.exec();
+
+    const parse = (i) => parseInt(results[i][1], 10) || 0;
+    const used = parse(0);
 
     const start = billingCycleStart();
     const nextReset = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, BILLING_CYCLE_DAY));
@@ -140,8 +154,15 @@ async function getStats() {
       cycleStart: start.toISOString().split('T')[0],
       cycleEnd: nextReset.toISOString().split('T')[0],
       breakdown: {
-        instroomApp: instroomAppCount,
-        instroomExtension: instroomExtensionCount,
+        instroomApp: {
+          total: parse(1),
+          users: parse(3),
+          similar: parse(4),
+          hashtags: parse(5),
+          locations: parse(6),
+          posts: parse(7),
+        },
+        instroomExtension: parse(2),
       }
     };
   } catch {
