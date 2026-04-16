@@ -22,7 +22,7 @@ async function searchUsers(query) {
   const params = { search_query: query };
   const baseURL = `https://${rapidApiHost}`;
 
-  await checkAndIncrement();
+  await checkAndIncrement('search');
 
   try {
     const response = await axios.get(`${baseURL}/v1/search_users`, { headers, params, timeout: 10000 });
@@ -54,7 +54,7 @@ async function getSimilarAccounts(username) {
   const params = { username_or_id_or_url: username };
   const baseURL = `https://${rapidApiHost}`;
 
-  await checkAndIncrement();
+  await checkAndIncrement('search');
 
   try {
     const response = await axios.get(`${baseURL}/v1/similar_accounts`, { headers, params, timeout: 10000 });
@@ -86,7 +86,7 @@ async function searchHashtags(query) {
   const params = { search_query: query };
   const baseURL = `https://${rapidApiHost}`;
 
-  await checkAndIncrement();
+  await checkAndIncrement('search');
 
   try {
     const response = await axios.get(`${baseURL}/v1/search_hashtags`, { headers, params, timeout: 10000 });
@@ -119,7 +119,7 @@ async function searchLocationUsers(query) {
   const baseURL = `https://${rapidApiHost}`;
 
   // Step 1: Search for the location
-  await checkAndIncrement();
+  await checkAndIncrement('search');
 
   let locationId;
   let locationName;
@@ -139,7 +139,7 @@ async function searchLocationUsers(query) {
   }
 
   // Step 2: Fetch posts from that location
-  await checkAndIncrement();
+  await checkAndIncrement('search');
 
   try {
     const postsResponse = await axios.get(`${baseURL}/v1/location_posts`, { headers, params: { location_id: locationId }, timeout: 30000 });
@@ -189,7 +189,7 @@ async function searchPosts(query) {
   const params = { search_query: query };
   const baseURL = `https://${rapidApiHost}`;
 
-  await checkAndIncrement();
+  await checkAndIncrement('search');
 
   try {
     const response = await axios.get(`${baseURL}/v1/search_posts`, { headers, params, timeout: 30000 });

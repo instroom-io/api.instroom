@@ -48,8 +48,9 @@ function secondsUntilEndOfMonth() {
  * Checks if the monthly cap is reached, then increments the counter.
  * Throws an error with HTTP 429 status if the cap is exceeded.
  * Falls through silently if Redis is unavailable (fail-open).
+ * @param {string} [tag] - Optional tag for per-endpoint tracking (e.g. 'search', 'instagram')
  */
-async function checkAndIncrement() {
+async function checkAndIncrement(tag) {
   const client = getRedis();
   const key = monthlyKey();
 
@@ -66,9 +67,19 @@ async function checkAndIncrement() {
     }
 
     // Atomically increment and set TTL on first call of the month
+    const ttl = secondsUntilEndOfMonth();
     const newCount = await client.incr(key);
     if (newCount === 1) {
-      await client.expire(key, secondsUntilEndOfMonth());
+      await client.expire(key, ttl);
+    }
+
+    // Increment per-tag counter for usage breakdown
+    if (tag) {
+      const tagKey = `${key}:${tag}`;
+      const tagCount = await client.incr(tagKey);
+      if (tagCount === 1) {
+        await client.expire(tagKey, ttl);
+      }
     }
   } catch (err) {
     if (err.status === 429) throw err; // re-throw our own limit error
@@ -79,7 +90,7 @@ async function checkAndIncrement() {
 }
 
 /**
- * Returns the current month's call count and remaining quota.
+ * Returns the current month's call count, remaining quota, and per-endpoint breakdown.
  */
 async function getStats() {
   const client = getRedis();
@@ -89,9 +100,21 @@ async function getStats() {
     await client.connect().catch(() => {});
     const current = await client.get(key);
     const used = parseInt(current, 10) || 0;
-    return { used, cap: MONTHLY_CAP, remaining: Math.max(0, MONTHLY_CAP - used) };
+
+    const searchCount = parseInt(await client.get(`${key}:search`), 10) || 0;
+    const instagramCount = parseInt(await client.get(`${key}:instagram`), 10) || 0;
+
+    return {
+      used,
+      cap: MONTHLY_CAP,
+      remaining: Math.max(0, MONTHLY_CAP - used),
+      breakdown: {
+        search: searchCount,
+        instagram: instagramCount,
+      }
+    };
   } catch {
-    return { used: null, cap: MONTHLY_CAP, remaining: null, error: 'Redis unavailable' };
+    return { used: null, cap: MONTHLY_CAP, remaining: null, breakdown: null, error: 'Redis unavailable' };
   }
 }
 
