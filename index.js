@@ -2,6 +2,7 @@
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
@@ -18,6 +19,9 @@ app.use(helmet());
 
 // CORS
 app.use(cors());
+
+// Gzip compression — shrinks JSON responses over the wire
+app.use(compression());
 
 // Rate limiting: max 60 requests per minute per IP
 const limiter = rateLimit({

@@ -78,10 +78,22 @@ async function checkAndIncrement(tag, amount = 1) {
   try {
     await client.connect().catch(() => {}); // no-op if already connected
 
-    const current = await client.get(key);
-    const count = parseInt(current, 10) || 0;
+    // Single pipeline: GET current count + INCRBY + tag INCRBY (1 round trip)
+    const ttl = secondsUntilEndOfCycle();
+    const pipe = client.pipeline();
+    pipe.get(key);
+    pipe.incrby(key, amount);
+    if (tag) pipe.incrby(`${key}:${tag}`, amount);
+    const results = await pipe.exec();
 
-    if (count + amount > MONTHLY_CAP) {
+    const current = parseInt(results[0][1], 10) || 0;
+    if (current + amount > MONTHLY_CAP) {
+      // Rollback the increments
+      const rollback = client.pipeline();
+      rollback.decrby(key, amount);
+      if (tag) rollback.decrby(`${key}:${tag}`, amount);
+      await rollback.exec();
+
       const nextReset = new Date(billingCycleStart());
       nextReset.setUTCMonth(nextReset.getUTCMonth() + 1);
       const err = new Error(`Monthly RapidAPI call limit of ${MONTHLY_CAP} reached. Resets on ${nextReset.toISOString().split('T')[0]}.`);
@@ -89,24 +101,16 @@ async function checkAndIncrement(tag, amount = 1) {
       throw err;
     }
 
-    const ttl = secondsUntilEndOfCycle();
-    const newCount = await client.incrby(key, amount);
+    // Set TTL on first call of the cycle
+    const newCount = parseInt(results[1][1], 10);
     if (newCount === amount) {
-      await client.expire(key, ttl);
-    }
-
-    // Increment per-tag counter for usage breakdown
-    if (tag) {
-      const tagKey = `${key}:${tag}`;
-      const tagCount = await client.incrby(tagKey, amount);
-      if (tagCount === amount) {
-        await client.expire(tagKey, ttl);
-      }
+      const ttlPipe = client.pipeline();
+      ttlPipe.expire(key, ttl);
+      if (tag) ttlPipe.expire(`${key}:${tag}`, ttl);
+      await ttlPipe.exec();
     }
   } catch (err) {
-    if (err.status === 429) throw err; // re-throw our own limit error
-
-    // Redis unavailable — log and fail-open (allow the call)
+    if (err.status === 429) throw err;
     console.warn('[RapidAPI Limiter] Redis unavailable, skipping limit check:', err.message);
   }
 }

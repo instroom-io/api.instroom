@@ -282,12 +282,18 @@ async function getFullOverview(username) {
  * Optimised: single rate-limit check, all HTTP calls in parallel.
  */
 async function getFullOverviewFromRapidAPI(username) {
+  // Check overview-level cache first (single lookup, zero computation)
+  const cachedOverview = cache.get(`overview_v2:${username}`);
+  if (cachedOverview) return cachedOverview;
+
   const cachedInfo = cache.get(`info:${username}`);
   const cachedPosts = cache.get(`posts:${username}`);
 
-  // Both cached — skip API + Redis entirely
+  // Both sub-caches hit — build without API calls
   if (cachedInfo && cachedPosts) {
-    return buildOverview(cachedInfo, cachedPosts, username);
+    const result = buildOverview(cachedInfo, cachedPosts, username);
+    cache.set(`overview_v2:${username}`, result);
+    return result;
   }
 
   const rapidApiKey = process.env.RAPIDAPI_KEY;
@@ -344,7 +350,9 @@ async function getFullOverviewFromRapidAPI(username) {
     cache.set(`posts:${username}`, postsData);
   }
 
-  return buildOverview(infoData, postsData, username);
+  const result = buildOverview(infoData, postsData, username);
+  cache.set(`overview_v2:${username}`, result);
+  return result;
 }
 
 /** Computes the final overview object from info + posts data. */
