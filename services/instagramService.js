@@ -275,23 +275,32 @@ async function getFullOverview(username) {
 
 /**
  * Fetches a full overview using only RapidAPI data sources (V2).
- * Combines getUserInfoFromRapidAPI and getUserStatsFromRapidAPI.
+ * Fetches info + posts in parallel (2 API calls), then computes stats inline.
  */
 async function getFullOverviewFromRapidAPI(username) {
-  const [infoData, statsData] = await Promise.all([
+  const [infoData, postsData] = await Promise.all([
     getUserInfoFromRapidAPI(username),
-    getUserStatsFromRapidAPI(username)
+    getUserPostsFromRapidAPI(username)
   ]);
+
+  const { total_like_count, total_comment_count, total_play_count, post_count } = postsData;
+  const followers = infoData.followers || 0;
+
+  const avg_likes = post_count > 0 ? total_like_count / post_count : 0;
+  const avg_comments = post_count > 0 ? total_comment_count / post_count : 0;
+  const avg_video_views = post_count > 0 ? total_play_count / post_count : 0;
+  const total_engagements = avg_likes + avg_comments;
+  const engagement_rate = followers > 0 ? (total_engagements / followers) * 100 : 0;
 
   return {
     photo: infoData.avatar || null,
     username: infoData.username || username,
     email: infoData.email || null,
-    followers: infoData.followers || 0,
-    engagement_rate: statsData.engagement_rate,
-    avg_likes: statsData.avg_likes,
-    avg_comments: statsData.avg_comments,
-    avg_video_views: statsData.avg_video_views,
+    followers,
+    engagement_rate: engagement_rate.toFixed(2) + '%',
+    avg_likes: formatK(avg_likes),
+    avg_comments: formatK(avg_comments),
+    avg_video_views: formatK(avg_video_views),
     location: infoData.country || null
   };
 }
